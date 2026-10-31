@@ -24,16 +24,23 @@ You should see the firmware find three devices. Ctrl+C to stop.
 
 ## Run
 
+**Terminal 1** — start the emulator and firmware, and leave it running:
+
 ```
-docker compose up --build                       # emulator + firmware, logs interleaved
-SCENARIO=flaky_link docker compose up --build   # with a fault scenario (see emulator/scenarios/)
+docker compose up --build                       # normal run, logs interleaved
+SCENARIO=flaky_link docker compose up --build   # or with a fault scenario (see emulator/scenarios/)
 ```
 
-To break the pack on purpose, keep the above running and, in a second terminal:
+Rebuild after code changes: Ctrl+C, then the same command again.
+
+**Terminal 2** — break the pack on purpose while terminal 1 is running.
+Run from the repo folder; it fails with `service "emu" is not running` otherwise.
 
 ```
 docker compose exec emu python3 ctl.py reboot   # or: drop, storm, corrupt, silent, status
 ```
+
+You'll see the effect in terminal 1's logs.
 
 Tests (GoogleTest / GMock):
 
@@ -44,8 +51,9 @@ docker build -f Dockerfile.test -t ble-wp-test . && docker run --rm ble-wp-test
 Without Docker:
 
 ```
-python3 emulator/emulator.py &
-cmake -S . -B build && cmake --build build && ./build/ble_wp
+python3 emulator/emulator.py                                   # terminal 1
+cmake -S . -B build && cmake --build build && ./build/ble_wp   # terminal 2
+python3 emulator/ctl.py reboot                                 # terminal 3, faults
 cmake -S . -B build-test -DBUILD_APP=OFF -DBUILD_TESTING=ON && cmake --build build-test && ctest --test-dir build-test
 ```
 
