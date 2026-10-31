@@ -755,7 +755,7 @@ class World:
                 self.record("mission", "STORM_RECOVERY", b"", took=round(took, 1), count=st["recoveries"])
                 if st["recoveries"] >= STORM_RECOVERIES_NEEDED:
                     pack.storm_code = "".join(random.choice(M.CODE_CHARS) for _ in range(8))
-                    log(f"storm over. Room 4 code is on Unlock: {pack.storm_code}")
+                    log("storm over. The room 4 code is waiting on Unlock.")
                     self.notify(pack.unlock, f"ROOM 4 CODE {pack.storm_code}".encode())
                 else:
                     st["next_fault"] = now + random.uniform(8, 12)
@@ -766,7 +766,7 @@ class World:
                 if kind == "drop":
                     self.drop_link(why="storm")
                 elif kind == "reboot":
-                    self.spawn(self.reboot_pack(4, why="(storm)"))
+                    self.spawn(self.reboot_pack(4, why="in the storm"))
                 else:
                     self.slow_until = now + 25
                     self.drop_link(why="storm, and the pack will answer slowly for a while")
