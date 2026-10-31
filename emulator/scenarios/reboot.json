@@ -1,0 +1,4 @@
+{
+  "reboot_every_s": [25, 40],
+  "reboot_downtime_s": 5
+}

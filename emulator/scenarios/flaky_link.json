@@ -1,0 +1,4 @@
+{
+  "link_drop_every_s": [15, 30],
+  "connect_fail_rate": 0.3
+}

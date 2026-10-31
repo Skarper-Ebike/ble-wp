@@ -1,0 +1,19 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        ca-certificates \
+        ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY . /work
+
+RUN cmake -S . -B build-test -G Ninja \
+        -DBUILD_APP=OFF \
+        -DBUILD_TESTING=ON \
+    && cmake --build build-test --parallel
+
+CMD ["ctest", "--test-dir", "build-test", "--output-on-failure"]

@@ -1,0 +1,17 @@
+services:
+  emu:
+    build: ./emulator
+    environment:
+      - SCENARIO=${SCENARIO:-default}
+    volumes:
+      - ./logs:/logs
+    ports:
+      - "7701:7701"   # fault injection, see emulator/ctl.py
+
+  fw:
+    build: .
+    environment:
+      - BLE_EMU_HOST=emu
+      - BLE_TRACE=${BLE_TRACE:-}
+    depends_on:
+      - emu

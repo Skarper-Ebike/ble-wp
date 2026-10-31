@@ -1,0 +1,4 @@
+{
+  "resp_delay_ms": [800, 2500],
+  "resp_loss_rate": 0.15
+}
