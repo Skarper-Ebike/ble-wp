@@ -3,10 +3,12 @@ services:
     build: ./emulator
     environment:
       - SCENARIO=${SCENARIO:-default}
+      - MISSION=${MISSION:-}
+      - MISSION_MINUTES=${MISSION_MINUTES:-80}
     volumes:
       - ./logs:/logs
     ports:
-      - "7701:7701"   # fault injection, see emulator/ctl.py
+      - "7701:7701"   # mission control, see emulator/ctl.py
 
   fw:
     build: .

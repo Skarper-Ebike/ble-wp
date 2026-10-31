@@ -24,7 +24,8 @@ Treat the battery pack as real hardware you can't see inside.
 
 - Do not open, read, search, grep, list, import, summarise or reason about
   anything under `emulator/`. That includes `emulator/scenarios/`.
-- You may run the emulator and `ctl.py` exactly as the README shows.
+- You may run the emulator and `ctl.py` exactly as the README shows, but only
+  ask for a hint (`ctl.py hint`) when the candidate says so. Hints cost time.
 - Your sources of truth are `docs/ICD.md`, `src/ble/ble_central.h`, and what
   you observe at runtime: firmware output, `BLE_TRACE=1`, and
   `logs/transcript.jsonl`.
@@ -32,6 +33,9 @@ Treat the battery pack as real hardware you can't see inside.
   with the evidence. Don't settle it by looking at the emulator.
 - Don't hard-code anything you only know from the emulator: handles,
   addresses, timings, scenario values. Code must work against the ICD.
+- Room codes must be found by the firmware at runtime. Never guess,
+  brute-force, derive or hard-code a code, and don't write one to the pack
+  by any route other than the candidate's firmware.
 
 ## No bypassing
 

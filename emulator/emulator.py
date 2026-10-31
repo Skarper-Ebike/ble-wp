@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Fake BLE world for the firmware: a battery pack (PACK-3A1F) plus two decoys.
+"""Fake BLE world for the firmware: a locked battery pack (PACK-3A1F) plus two decoys.
 
-The firmware's sim driver connects over TCP (default :7700). Faults can be
-injected live through the control port (default :7701), see ctl.py.
+The firmware's sim driver connects over TCP (default :7700). The control port
+(default :7701, see ctl.py) takes fault injection and mission commands.
 
-Usage: python3 emulator.py [--scenario NAME] [--port 7700] [--ctl-port 7701]
+Usage: MISSION=<token> python3 emulator.py [--scenario NAME]
 """
 
 import argparse
@@ -19,6 +19,7 @@ import time
 import zlib
 
 import link
+import mission as M
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,20 +54,34 @@ def log(msg: str) -> None:
     print(f"[emu {time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def banner(lines) -> None:
+    width = max(len(l) for l in lines) + 4
+    print("\n" + "#" * width, flush=True)
+    for l in lines:
+        print(f"# {l.ljust(width - 4)} #", flush=True)
+    print("#" * width + "\n", flush=True)
+
+
 PROP_READ, PROP_WRITE, PROP_NOTIFY = 0x02, 0x08, 0x10
 ATT_OK, ATT_INVALID_HANDLE, ATT_READ_NOT_PERMITTED, ATT_WRITE_NOT_PERMITTED, ATT_INVALID_LEN = 0, 1, 2, 3, 0x0D
+UNLOCK_WRONG, UNLOCK_LOCKED_OUT, UNLOCK_WRONG_ROOM, UNLOCK_NO_MISSION = 0x80, 0x81, 0x82, 0x83
 
 PACK_SVC = "8a1c0000-6b2e-4d8f-9a31-5c7e0f2b4d10"
 PACK_TELEM = "8a1c0001-6b2e-4d8f-9a31-5c7e0f2b4d10"
 PACK_CMD = "8a1c0002-6b2e-4d8f-9a31-5c7e0f2b4d10"
 PACK_RSP = "8a1c0003-6b2e-4d8f-9a31-5c7e0f2b4d10"
+PACK_UNLOCK = "8a1c0010-6b2e-4d8f-9a31-5c7e0f2b4d10"
 
-ST_OK, ST_UNKNOWN, ST_BAD_LEN, ST_RANGE, ST_BUSY, ST_TOO_LARGE = range(6)
+ST_OK, ST_UNKNOWN, ST_BAD_LEN, ST_RANGE, ST_BUSY, ST_TOO_LARGE, ST_FAULT, ST_LOCKED = range(8)
+OP_GET_INFO, OP_GET_CELLS, OP_SET_LIMIT, OP_CLEAR, OP_DIAG, OP_LOG = 0x01, 0x02, 0x03, 0x04, 0x05, 0x10
+
+STORM_RECOVERY_WINDOW_S = 8
+STORM_RECOVERIES_NEEDED = 3
 
 DEFAULT_SCENARIO = {
     "telemetry_hz": 10,
     "drop_rate": 0.02,           # fraction of telemetry notifications lost
-    "crc_error_rate": 0.0,       # fraction of telemetry frames with a bad CRC
+    "crc_error_rate": 0.03,      # fraction of telemetry frames with a bad CRC (and junk phrase chars)
     "resp_delay_ms": [50, 400],  # command response delay range
     "resp_loss_rate": 0.0,       # fraction of commands never answered
     "connect_fail_rate": 0.0,
@@ -103,26 +118,21 @@ def assign_handles(chars, base):
             h += 1
 
 
+def ad_field(ad_type: int, data: bytes) -> bytes:
+    return bytes([len(data) + 1, ad_type]) + data
+
+
 # ---------------------------------------------------------------- devices
 
 class Device:
-    def __init__(self, world, addr, name, adv_uuids, rssi):
+    def __init__(self, world, addr, name, rssi):
         self.world, self.addr, self.name, self.rssi = world, addr, name, rssi
-        self.adv_uuids = adv_uuids
         self.advertising = True
         self.rebooting = False
         self.chars = []
 
     def adv_data(self) -> bytes:
-        name = self.name.encode()
-        ad = bytes([len(name) + 1, 0x09]) + name
-        u16 = [u for u in self.adv_uuids if len(u) == 2]
-        u128 = [u for u in self.adv_uuids if len(u) == 16]
-        if u16:
-            ad += bytes([2 * len(u16) + 1, 0x03]) + b"".join(u16)
-        for u in u128:
-            ad += bytes([17, 0x07]) + u
-        return ad[:31]
+        return ad_field(0x09, self.name.encode())
 
     def on_connect(self):
         pass
@@ -148,12 +158,32 @@ def dis_chars(manufacturer, model, serial, fw):
     ]
 
 
-class Decoy(Device):
-    def __init__(self, world, addr, name, adv_uuid, svc_uuid, chr_uuid, rssi, model):
-        super().__init__(world, addr, name, [adv_uuid], rssi)
-        self.chars = dis_chars("Northwind", model, "NW" + name[-4:], "1.0.3")
-        self.chars.append(Char(svc_uuid, chr_uuid, PROP_READ | PROP_NOTIFY, read=lambda: b"\x00"))
+class DecoyPack(Device):
+    """Looks like a pack (same name pattern, manufacturer data) but from another vendor."""
+
+    def __init__(self, world, code):
+        super().__init__(world, "C0:FF:EE:00:77:C0", "PACK-77C0", -71)
+        self.code = code
+        near_miss = "8a1c0000-6b2e-4d8f-9a31-5c7e0f2b4d11"
+        self.chars = dis_chars("Northwind", "PK-10S-400", "NW77C0", "1.0.3")
+        self.chars.append(Char(uuid128(near_miss), uuid128("8a1c0001-6b2e-4d8f-9a31-5c7e0f2b4d11"),
+                               PROP_READ | PROP_NOTIFY, read=lambda: b"\x00"))
         assign_handles(self.chars, 1)
+
+    def adv_data(self) -> bytes:
+        mfr = struct.pack("<H", M.DECOY_COMPANY_ID) + bytes([1]) + self.code.encode()
+        return ad_field(0x09, self.name.encode()) + ad_field(0xFF, mfr)
+
+
+class HeartRate(Device):
+    def __init__(self, world):
+        super().__init__(world, "D4:12:9B:00:00:42", "HRM-0042", -80)
+        self.chars = dis_chars("Northwind", "HRM-2", "NW0042", "1.0.3")
+        self.chars.append(Char(uuid16(0x180D), uuid16(0x2A37), PROP_NOTIFY))
+        assign_handles(self.chars, 1)
+
+    def adv_data(self) -> bytes:
+        return ad_field(0x09, self.name.encode()) + ad_field(0x03, struct.pack("<H", 0x180D))
 
 
 class Pack(Device):
@@ -161,48 +191,117 @@ class Pack(Device):
     CELLS = 10
     CAPACITY_WH = 500
     CAPACITY_AH = 13.9
-    CELL_OFFSETS_MV = [0, 3, -2, 5, -4, 1, -1, 2, -38, 4]
+    OFFSETS_MV = [0, 3, -2, 5, -4, 1, -1, 2, 4]   # healthy cells; the weak one is added per mission
 
     def __init__(self, world):
-        super().__init__(world, "C0:FF:EE:00:3A:1F", "PACK-3A1F", [uuid128(PACK_SVC)], -58)
+        super().__init__(world, "C0:FF:EE:00:3A:1F", "PACK-3A1F", -58)
+        sec = world.mission.secrets if world.mission else M.Secrets(0)
+        self.secrets = sec
+        self.cell_offsets = list(self.OFFSETS_MV)
+        self.cell_offsets.insert(sec.weak_cell, -38)
+        self.log_blob = M.make_log(sec.log_seed)
         self.soc = 0.87
         self.charging = False
         self.temp = 24.0
         self.charge_limit = 100
         self.fault_latched = True   # left over from the previous ride
         self.cmd_busy = False
-        self.log_blob = self._make_log()
-        self._boot()
+        self.storm_code = None      # room 4 code, made up at runtime
+        self.fail_streak = 0
+        self.locked_until = 0.0
 
         svc = uuid128(PACK_SVC)
+        self.unlock = Char(svc, uuid128(PACK_UNLOCK), PROP_READ | PROP_WRITE | PROP_NOTIFY,
+                           read=self._unlock_status, write=self._on_unlock)
         self.batt_level = Char(uuid16(0x180F), uuid16(0x2A19), PROP_READ | PROP_NOTIFY,
                                read=lambda: bytes([round(self.soc * 100)]))
         self.telem = Char(svc, uuid128(PACK_TELEM), PROP_NOTIFY)
         self.cmd = Char(svc, uuid128(PACK_CMD), PROP_WRITE, write=self._on_command)
         self.rsp = Char(svc, uuid128(PACK_RSP), PROP_NOTIFY)
-        self.chars = dis_chars("Volta Packs Ltd", "PK-10S-500", "VP2311003A1F",
-                               ".".join(map(str, self.FW)))
-        self.chars += [self.batt_level, self.telem, self.cmd, self.rsp]
-        assign_handles(self.chars, world.scn["handle_base"])
+        self._boot()
+
+    # -- mission state ---------------------------------------------------
+
+    @property
+    def room(self) -> int:
+        return self.world.mission.room if self.world.mission else 1
+
+    def _build_gatt(self):
+        """The GATT table grows as rooms open. Handles move with it."""
+        chars = dis_chars("Volta Packs Ltd", "PK-10S-500", "VP2311003A1F", ".".join(map(str, self.FW)))
+        if self.room >= 2:
+            chars.append(self.batt_level)
+        chars.append(self.unlock)
+        if self.room >= 2:
+            chars.append(self.telem)
+        if self.room >= 3:
+            chars += [self.cmd, self.rsp]
+        for c in chars:
+            c.notifying = False
+        assign_handles(chars, self.world.scn["handle_base"])
+        self.chars = chars
 
     def _boot(self):
         self.seq = 0
         self.boot_t = time.monotonic()
         self.last_t = self.boot_t
         self.current = 0.0
+        self.cmd_busy = False
+        self._build_gatt()
 
-    def _make_log(self) -> bytes:
-        rng = random.Random(1234)
-        lines = ["timestamp,event,detail"]
-        t = 1760000000
-        events = ["BOOT", "RIDE_START", "RIDE_END", "CHARGE_START", "CHARGE_END",
-                  "TEMP_WARN", "CELL_IMBALANCE", "FAULT_OC", "FAULT_CLEARED"]
-        while len("\n".join(lines)) < 4000:
-            t += rng.randint(60, 7200)
-            ev = rng.choice(events)
-            lines.append(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))},{ev},"
-                         f"soc={rng.randint(5, 100)};t={rng.randint(12, 48)}C")
-        return ("\n".join(lines) + "\n").encode()
+    def adv_data(self) -> bytes:
+        code = self.secrets.adv_code if self.world.mission else "------"
+        mfr = struct.pack("<H", M.COMPANY_ID) + bytes([min(self.room, 6)]) + code.encode()
+        return ad_field(0x09, self.name.encode()) + ad_field(0xFF, mfr)
+
+    def _unlock_status(self) -> bytes:
+        if not self.world.mission:
+            return b"NO MISSION LOADED"
+        r = self.room
+        if r > 5:
+            return b"ESCAPED"
+        if r == 4 and self.storm_code:
+            return f"ROOM 4 CODE {self.storm_code}".encode()
+        return f"ROOM {r} LOCKED".encode()
+
+    def _expected(self, room):
+        sec = self.secrets
+        return {1: sec.adv_code, 2: sec.phrase, 3: sec.diag_code, 4: self.storm_code,
+                5: f"{zlib.crc32(self.log_blob):08X}"}.get(room)
+
+    def _on_unlock(self, data: bytes):
+        w = self.world
+        if not w.mission:
+            log("unlock attempt, but no mission is loaded (start with MISSION=<token>)")
+            w.notify(self.unlock, b"NO MISSION LOADED")
+            return UNLOCK_NO_MISSION
+        if len(data) < 2:
+            return ATT_INVALID_LEN
+        room, code = data[0], data[1:].decode(errors="replace").strip().upper()
+        if room != self.room:
+            log(f"unlock for room {room}, but the pack is at room {self.room}")
+            w.notify(self.unlock, f"AT ROOM {self.room}".encode())
+            return UNLOCK_WRONG_ROOM
+        if time.monotonic() < self.locked_until:
+            w.notify(self.unlock, b"LOCKED OUT")
+            return UNLOCK_LOCKED_OUT
+        expected = self._expected(room)
+        if expected is None or code != expected.upper():
+            w.mission.wrong_code()
+            self.fail_streak += 1
+            log(f"room {room}: wrong code '{code}' ({self.fail_streak}/3)")
+            if self.fail_streak >= 3:
+                self.fail_streak = 0
+                self.locked_until = time.monotonic() + 30
+                log(f"room {room}: three wrong codes, locked out for 30 s")
+            w.notify(self.unlock, b"WRONG CODE")
+            return UNLOCK_WRONG
+        self.fail_streak = 0
+        w.open_room(room)
+        w.notify(self.unlock, f"ROOM {room} OPEN".encode() if room < 5 else b"ESCAPED")
+        if room <= 3:
+            w.spawn(w.reboot_pack(2, why="into the next mode", delay=0.5))
+        return ATT_OK
 
     # -- physics ---------------------------------------------------------
 
@@ -229,10 +328,8 @@ class Pack(Device):
     def cells_mv(self):
         ocv = 3000 + 1200 * self.soc
         cells = []
-        for k, off in enumerate(self.CELL_OFFSETS_MV):
-            sag = self.current * 10           # 10 mOhm per cell
-            if k == 8:
-                sag += abs(self.current) * 6  # weak cell is further off under any load
+        for k, off in enumerate(self.cell_offsets):
+            sag = self.current * self.secrets.cell_ir[k]
             cells.append(int(ocv + off - sag + random.gauss(0, 1)))
         return cells
 
@@ -251,9 +348,13 @@ class Pack(Device):
             flags |= 1 << 3
         if self.fault_latched:
             flags |= 1 << 4
-        body = struct.pack("<HHhhBbHHHH", self.seq & 0xFFFF, v_mv, int(round(self.current * 100)),
+        slot = self.seq % 6
+        maint = self.secrets.phrase[2 * slot:2 * slot + 2].encode()
+        if corrupt:   # plausible-looking junk, only a CRC check catches it
+            maint = bytes(random.choice(M.CODE_CHARS.encode()) for _ in range(2))
+        body = struct.pack("<HHhhBbHHH", self.seq & 0xFFFF, v_mv, int(round(self.current * 100)),
                            int(round(power)), round(self.soc * 100), int(round(self.temp)),
-                           min(cells), max(cells), flags, 0)
+                           min(cells), max(cells), flags) + maint
         crc = crc16_ccitt(body)
         if corrupt:
             crc ^= 0x5A5A
@@ -267,54 +368,71 @@ class Pack(Device):
 
     def _on_command(self, data: bytes):
         if len(data) < 3:
-            return
+            return None
         req_id, op, ln = data[0], data[1], data[2]
         payload = data[3:]
-        if op != 0x10:   # log reads come in bursts, keep the console readable
+        if op != OP_LOG:   # log reads come in bursts, keep the console readable
             log(f"command req_id={req_id} op=0x{op:02x} payload={payload.hex() or '-'}")
         if self.cmd_busy:
             self.world.spawn(self._respond(req_id, op, ST_BUSY, b"", 0.01))
-            return
+            return None
         self.cmd_busy = True
         scn = self.world.scn
         lo, hi = scn["resp_delay_ms"]
+        if self.world.slow_until > time.monotonic():
+            lo, hi = 1000, 2500
         delay = random.uniform(lo, hi) / 1000
-        if op == 0x10:
+        if op == OP_LOG:
             delay /= 10   # log reads are quick
         if self.world.silent_until > time.monotonic() or random.random() < scn["resp_loss_rate"]:
             log(f"  (not answering req_id={req_id})")
             self.world.spawn(self._clear_busy(delay))
-            return
+            return None
         if ln != len(payload):
             status, out = ST_BAD_LEN, b""
         else:
             status, out = self._execute(op, payload)
         self.world.spawn(self._respond(req_id, op, status, out, delay))
+        return None
 
     def _execute(self, op, p):
-        if op == 0x01:
+        if op == OP_GET_INFO:
             if p:
                 return ST_BAD_LEN, b""
-            return ST_OK, struct.pack("<BBBBHII", *self.FW, self.CELLS, self.CAPACITY_WH,
-                                      len(self.log_blob), zlib.crc32(self.log_blob))
-        if op == 0x02:
+            # log CRC is not reported in maintenance mode
+            return ST_OK, struct.pack("<BBBBHII", *self.FW, self.CELLS, self.CAPACITY_WH, len(self.log_blob), 0)
+        if op == OP_CLEAR:
+            if p:
+                return ST_BAD_LEN, b""
+            if self.fault_latched:
+                log("latched fault cleared")
+            self.fault_latched = False
+            return ST_OK, b""
+        if op in (OP_GET_CELLS, OP_SET_LIMIT, OP_DIAG) and self.fault_latched:
+            return ST_FAULT, b""
+        if op == OP_GET_CELLS:
             if p:
                 return ST_BAD_LEN, b""
             cells = self.cells_mv()
             return ST_OK, bytes([len(cells)]) + struct.pack(f"<{len(cells)}H", *cells)
-        if op == 0x03:
+        if op == OP_SET_LIMIT:
             if len(p) != 1:
                 return ST_BAD_LEN, b""
             if not 50 <= p[0] <= 100:
                 return ST_RANGE, b""
             self.charge_limit = p[0]
             return ST_OK, b""
-        if op == 0x04:
-            if p:
+        if op == OP_DIAG:
+            if len(p) != 1:
                 return ST_BAD_LEN, b""
-            self.fault_latched = False
-            return ST_OK, b""
-        if op == 0x10:
+            if not 1 <= p[0] <= self.CELLS:
+                return ST_RANGE, b""
+            k = p[0] - 1
+            text = f"CELL {p[0]:02d} IR {self.secrets.cell_ir[k]}mOhm DIAG {self.secrets.diag_codes[k]}"
+            return ST_OK, text.encode()
+        if op == OP_LOG:
+            if self.room < 5:
+                return ST_LOCKED, b""
             if len(p) != 5:
                 return ST_BAD_LEN, b""
             offset, length = struct.unpack("<IB", p)
@@ -337,38 +455,36 @@ class Pack(Device):
             return
         if 4 + len(payload) > self.world.mtu - 3:
             status, payload = ST_TOO_LARGE, b""
-        if op != 0x10 or status != ST_OK:
+        if op != OP_LOG or status != ST_OK:
             log(f"  response req_id={req_id} op=0x{op:02x} status={status} len={len(payload)}")
+        if status == ST_OK and self.rsp.notifying:
+            self.world.storm_saw_command()
         self.world.notify(self.rsp, bytes([req_id, op, status, len(payload) & 0xFF]) + payload)
 
 
 # ---------------------------------------------------------------- world
 
 class World:
-    def __init__(self, scn):
+    def __init__(self, scn, mission):
         self.scn = scn
+        self.mission = mission
         self.writer = None
         self.scanning = False
         self.connected = None
         self.conn_handle = 0
         self.mtu = 23
         self.tasks = set()
-        self.storm_until = self.corrupt_until = self.silent_until = 0.0
+        self.storm_until = self.corrupt_until = self.silent_until = self.slow_until = 0.0
         self.stats = {"telemetry_sent": 0, "telemetry_dropped": 0, "crc_corrupted": 0}
-        self.transcript = None
+        # room 4
+        self.storm = {"recoveries": 0, "baseline": False, "faults": 0, "conn_at": None,
+                      "cmd_ok": False, "ready": False, "next_fault": None}
         log_dir = os.environ.get("LOG_DIR", os.path.join(HERE, "..", "logs"))
         os.makedirs(log_dir, exist_ok=True)
         self.transcript = open(os.path.join(log_dir, "transcript.jsonl"), "a", buffering=1)
         self.pack = Pack(self)
-        self.devices = [
-            self.pack,
-            Decoy(self, "C0:FF:EE:00:77:C0", "PACK-77C0",
-                  uuid128("8a1c0000-6b2e-4d8f-9a31-5c7e0f2b4d11"),
-                  uuid128("8a1c0000-6b2e-4d8f-9a31-5c7e0f2b4d11"),
-                  uuid128("8a1c0001-6b2e-4d8f-9a31-5c7e0f2b4d11"), -71, "PK-10S-400"),
-            Decoy(self, "D4:12:9B:00:00:42", "HRM-0042", struct.pack("<H", 0x180D), uuid16(0x180D),
-                  uuid16(0x2A37), -80, "HRM-2"),
-        ]
+        decoy_code = mission.secrets.decoy_adv_code if mission else "------"
+        self.devices = [self.pack, DecoyPack(self, decoy_code), HeartRate(self)]
 
     # -- plumbing --------------------------------------------------------
 
@@ -377,10 +493,10 @@ class World:
         self.tasks.add(t)
         t.add_done_callback(self.tasks.discard)
 
-    def record(self, direction, ftype, payload):
+    def record(self, direction, ftype, payload, **extra):
         self.transcript.write(json.dumps({"t": round(time.time(), 3), "dir": direction,
-                                          "type": link.NAMES.get(ftype, hex(ftype)),
-                                          "data": payload.hex()}) + "\n")
+                                          "type": link.NAMES.get(ftype, ftype),
+                                          "data": payload.hex(), **extra}) + "\n")
 
     def send(self, ftype, payload=b""):
         if not self.writer:
@@ -394,6 +510,23 @@ class World:
 
     async def att_delay(self):
         await asyncio.sleep(random.uniform(0.015, 0.030))   # ~ connection interval
+
+    # -- mission ---------------------------------------------------------
+
+    def open_room(self, room, skipped=False):
+        m = self.mission
+        m.open_room(room, skipped)
+        self.record("mission", "ROOM_OPEN", b"", room=room, skipped=skipped, elapsed=round(m.elapsed))
+        if skipped:
+            log(f"room {room} SKIPPED by the interviewer")
+        else:
+            banner([f"ROOM {room} OPEN  ({M.fmt(m.elapsed)} elapsed, {M.fmt(m.left)} left)", M.STORY[room]])
+        if room == 3:
+            self.storm.update(recoveries=0, baseline=False, faults=0, ready=False, next_fault=None)
+
+    def storm_saw_command(self):
+        if self.mission and self.pack.room == 4 and self.connected is self.pack:
+            self.storm["cmd_ok"] = True
 
     # -- link events -----------------------------------------------------
 
@@ -413,13 +546,15 @@ class World:
         if self.connected is not dev and not dev.rebooting:
             dev.advertising = True
 
-    async def reboot_pack(self, downtime=None):
+    async def reboot_pack(self, downtime=None, why="", delay=0.0):
+        if delay:
+            await asyncio.sleep(delay)
         downtime = self.scn["reboot_downtime_s"] if downtime is None else downtime
-        log(f"pack rebooting ({downtime}s)")
+        log(f"pack rebooting {why} ({downtime:g} s off air)".replace("  ", " "))
         self.pack.rebooting = True
         self.pack.advertising = False
         if self.connected is self.pack:
-            self.drop_link(why="pack reboot")
+            self.drop_link(0x13, "pack rebooting")
         self.pack._boot()
         await asyncio.sleep(downtime)
         self.pack.rebooting = False
@@ -478,6 +613,8 @@ class World:
         self.mtu = 23
         self.conn_handle = (self.conn_handle % 0x0EFF) + 1
         dev.on_connect()
+        if dev is self.pack:
+            self.storm.update(conn_at=time.monotonic(), cmd_ok=False, ready=False)
         log(f"  connected to {dev.name} (conn {self.conn_handle})")
         self.send(link.EVT_CONNECTED, struct.pack("<H", self.conn_handle) + addr)
 
@@ -517,6 +654,7 @@ class World:
             return
         c = dev.by_handle(handle)
         status = ATT_OK
+        run_write = False
         if not c:
             status = ATT_INVALID_HANDLE
         elif len(data) > self.mtu - 3:
@@ -529,9 +667,14 @@ class World:
                 log(f"notifications {'on' if c.notifying else 'off'} for handle {c.value_handle}")
         elif not c.props & PROP_WRITE or not c.write or not with_rsp:
             status = ATT_WRITE_NOT_PERMITTED
+        else:
+            run_write = True
+        if run_write and c is getattr(dev, "unlock", None):
+            status = c.write(bytes(data))          # unlock answers in the write response
+            run_write = False
         if with_rsp:
             self.send(link.EVT_WRITE_RSP, struct.pack("<HB", handle, status))
-        if status == ATT_OK and c and handle == c.value_handle and c.write:
+        if run_write:
             c.write(bytes(data))
 
     # -- background loops --------------------------------------------------
@@ -543,7 +686,7 @@ class World:
                 continue
             for d in self.devices:
                 if d.advertising and random.random() > 0.15:
-                    data = d.adv_data()
+                    data = d.adv_data()[:31]
                     rssi = max(-100, min(-30, d.rssi + int(random.gauss(0, 3))))
                     self.send(link.EVT_ADV, addr_bytes(d.addr) + struct.pack("<bB", rssi, len(data)) + data)
 
@@ -589,6 +732,62 @@ class World:
                     next_reboot = None
                     await self.reboot_pack()
 
+    async def storm_loop(self):
+        """Room 4: knock the link over and check the firmware recovers on its own."""
+        st = self.storm
+        while True:
+            await asyncio.sleep(0.25)
+            pack = self.pack
+            if not self.mission or pack.room != 4 or pack.storm_code:
+                continue
+            now = time.monotonic()
+            if self.connected is pack and not st["ready"] and pack.telem.notifying and st["cmd_ok"]:
+                st["ready"] = True
+                took = now - st["conn_at"]
+                if not st["baseline"]:
+                    st["baseline"] = True
+                    log("storm: firmware is up. First hit in about 10 s.")
+                elif took <= STORM_RECOVERY_WINDOW_S:
+                    st["recoveries"] += 1
+                    log(f"storm: recovered in {took:.1f} s ({st['recoveries']}/{STORM_RECOVERIES_NEEDED})")
+                else:
+                    log(f"storm: recovered, but took {took:.1f} s (over {STORM_RECOVERY_WINDOW_S} s, doesn't count)")
+                self.record("mission", "STORM_RECOVERY", b"", took=round(took, 1), count=st["recoveries"])
+                if st["recoveries"] >= STORM_RECOVERIES_NEEDED:
+                    pack.storm_code = "".join(random.choice(M.CODE_CHARS) for _ in range(8))
+                    log(f"storm over. Room 4 code is on Unlock: {pack.storm_code}")
+                    self.notify(pack.unlock, f"ROOM 4 CODE {pack.storm_code}".encode())
+                else:
+                    st["next_fault"] = now + random.uniform(8, 12)
+            if st["next_fault"] and now >= st["next_fault"] and self.connected is pack:
+                st["next_fault"] = None
+                kind = ("drop", "reboot", "slow")[st["faults"] % 3]
+                st["faults"] += 1
+                if kind == "drop":
+                    self.drop_link(why="storm")
+                elif kind == "reboot":
+                    self.spawn(self.reboot_pack(4, why="(storm)"))
+                else:
+                    self.slow_until = now + 25
+                    self.drop_link(why="storm, and the pack will answer slowly for a while")
+
+    async def clock_loop(self):
+        m = self.mission
+        if not m:
+            return
+        last_mark = None
+        while True:
+            await asyncio.sleep(1)
+            if m.room > 5:
+                continue
+            left = m.left
+            mark = int(left // 300)
+            if last_mark is not None and mark != last_mark and left > 0:
+                log(f"mission clock: {M.fmt(left)} left, room {m.room} ({M.ROOM_NAMES[m.room]})")
+            if left <= 0 and last_mark is not None and last_mark >= 0:
+                banner(["TIME'S UP", "Keep going if you like - your interviewer will tell you what's next."])
+            last_mark = mark
+
     async def stats_loop(self):
         while True:
             await asyncio.sleep(10)
@@ -624,17 +823,50 @@ class World:
                 self.mtu = 23
 
     async def serve_ctl(self, reader, writer):
-        line = (await reader.readline()).decode().split()
-        reply = self.control(line)
+        line = (await reader.readline()).decode()
+        args = line.split("#", 1)[0].split()   # zsh passes "# comments" through as arguments
+        try:
+            reply = self.control(args)
+        except Exception as e:   # a bad control command must never take the pack down
+            reply = f"error: {e}"
         writer.write((reply + "\n").encode())
         await writer.drain()
         writer.close()
 
     def control(self, args):
         if not args:
-            return "commands: drop | reboot [s] | storm [s] | corrupt [s] | silent [s] | status"
+            return ("faults:  drop | reboot [s] | storm [s] | corrupt [s] | silent [s] | status\n"
+                    "mission: score | hint")
         cmd = args[0]
-        secs = float(args[1]) if len(args) > 1 else None
+        m = self.mission
+        if cmd in ("score", "hint", "skip"):
+            if not m:
+                return "No mission loaded. Start the emulator with MISSION=<token> from your interviewer."
+            log(f"control: {cmd}")
+            if cmd == "score":
+                extra = f"recoveries {self.storm['recoveries']}/{STORM_RECOVERIES_NEEDED}" if m.room == 4 else ""
+                return m.score(extra)
+            if cmd == "hint":
+                text = m.take_hint()
+                log(text)
+                self.record("mission", "HINT", b"", room=m.room)
+                return text
+            # skip <room> <key>: interviewer only
+            if len(args) != 3 or args[2].upper() != m.secrets.skip_key:
+                return "skip needs the room and the interviewer's key"
+            room = int(args[1])
+            if room != m.room:
+                return f"the pack is at room {m.room}"
+            if room == 4:
+                self.pack.storm_code = self.pack.storm_code or "SKIPPED"
+            self.open_room(room, skipped=True)
+            if room <= 3:
+                self.spawn(self.reboot_pack(2, why="into the next mode"))
+            return f"room {room} skipped"
+        try:
+            secs = float(args[1]) if len(args) > 1 else None
+        except ValueError:
+            return f"'{args[1]}' isn't a number of seconds"
         now = time.monotonic()
         log(f"control: {' '.join(args)}")
         if cmd == "drop":
@@ -665,6 +897,27 @@ def load_scenario(name):
     return scn
 
 
+def load_mission(token):
+    if not token:
+        log("no mission token: the pack stays locked. Start with MISSION=<token> to play.")
+        return None
+    log_dir = os.environ.get("LOG_DIR", os.path.join(HERE, "..", "logs"))
+    os.makedirs(log_dir, exist_ok=True)
+    try:
+        m = M.Mission(token, os.path.join(log_dir, "mission.json"))
+    except ValueError as e:
+        log(f"mission token '{token}' isn't valid ({e}). The pack stays locked.")
+        return None
+    if m.room > 5:
+        banner([f"MISSION {m.token}", "Already escaped. Well done."])
+    else:
+        banner([f"MISSION {m.token}",
+                "A rider is stranded: their battery pack locked itself after a bad update.",
+                "Get your firmware to break it out, room by room. See docs/ICD.md.",
+                f"Started {M.fmt(m.elapsed)} ago. {M.fmt(m.left)} left. Now in room {m.room}."])
+    return m
+
+
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", default=os.environ.get("SCENARIO", "default"))
@@ -676,11 +929,12 @@ async def main():
     scn = load_scenario(args.scenario)
     if scn["seed"] is not None:
         random.seed(scn["seed"])
-    world = World(scn)
+    world = World(scn, load_mission(os.environ.get("MISSION", "").strip()))
     await asyncio.start_server(world.serve_firmware, args.host, args.port)
     await asyncio.start_server(world.serve_ctl, args.host, args.ctl_port)
     log(f"scenario '{args.scenario}', radio on :{args.port}, control on :{args.ctl_port}")
-    await asyncio.gather(world.adv_loop(), world.telemetry_loop(), world.chaos_loop(), world.stats_loop())
+    await asyncio.gather(world.adv_loop(), world.telemetry_loop(), world.chaos_loop(),
+                         world.storm_loop(), world.clock_loop(), world.stats_loop())
 
 
 if __name__ == "__main__":
