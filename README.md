@@ -27,7 +27,12 @@ You should see the firmware find three devices. Ctrl+C to stop.
 ```
 docker compose up --build                       # emulator + firmware, logs interleaved
 SCENARIO=flaky_link docker compose up --build   # with a fault scenario (see emulator/scenarios/)
-docker compose exec emu python3 ctl.py reboot   # inject a fault while it runs (drop, reboot, storm, corrupt, silent)
+```
+
+To break the pack on purpose, keep the above running and, in a second terminal:
+
+```
+docker compose exec emu python3 ctl.py reboot   # or: drop, storm, corrupt, silent, status
 ```
 
 Tests (GoogleTest / GMock):
