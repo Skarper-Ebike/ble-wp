@@ -82,6 +82,7 @@ Rules:
 - Your code goes in `src/application/` (and `tests/`). Don't change `src/ble/` or `emulator/`.
 - Logic you want to unit test goes in `application_core` (no FreeRTOS in it). Task and queue glue goes in the firmware target.
 - Commit as you go. We'll read the history.
+- `CLAUDE.md`, `AGENTS.md` and `.claude/` set the rules for your AI tools. Leave them as they are.
 
 ## The session (~2 h)
 

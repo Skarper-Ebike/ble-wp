@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./emulator/**)",
+      "Edit(./emulator/**)",
+      "Write(./emulator/**)",
+      "Edit(./src/ble/**)",
+      "Write(./src/ble/**)",
+      "Edit(./CLAUDE.md)",
+      "Write(./CLAUDE.md)",
+      "Edit(./AGENTS.md)",
+      "Write(./AGENTS.md)",
+      "Edit(./.claude/**)",
+      "Write(./.claude/**)"
+    ]
+  }
+}
