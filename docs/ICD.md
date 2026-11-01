@@ -17,8 +17,7 @@ big-endian string form; on the wire (and in `ble_uuid_t`) they are reversed.
 | Complete local name (0x09) | `PACK-<last 4 hex of address>`, e.g. `PACK-3A1F` |
 | Manufacturer data (0xFF) | company ID `0xFFFF` (u16), current room (u8), 6 ASCII characters |
 
-Other devices are advertising too, and not all of them are honest about what
-they are. Our packs only ever use company ID `0xFFFF`.
+Our packs use company ID `0xFFFF`.
 
 ## Rooms
 
@@ -30,7 +29,7 @@ The pack's GATT table grows as rooms open, so attribute handles change.
 | 1 | Device Information, Unlock | The code the pack advertises |
 | 2 | + Battery, Telemetry | The 12-character service phrase carried in telemetry |
 | 3 | + Command, Response | The diagnostic code for the pack's weak cell |
-| 4 | same | Survive. The pack will drop, reboot and stall; recover on your own and it gives you a code |
+| 4 | same | Stay connected and responsive. The pack gives you a code when it's satisfied |
 | 5 | same, event log unlocked | CRC-32 of the event log |
 
 After rooms 1–3 open, the pack reboots into its next mode: expect a disconnect
@@ -96,8 +95,8 @@ changes.
 Flags: bit0 charging, bit1 discharging, bit2 over-temperature warning,
 bit3 cell imbalance (>50 mV), bit4 fault latched (cleared by `CLEAR_FAULTS`).
 
-Frames with a bad CRC must be discarded; everything in them is untrustworthy.
-Notifications are not acknowledged, so frames can be lost.
+Frames with a bad CRC must be discarded. Notifications are not acknowledged,
+so frames can be lost.
 
 ## Commands
 

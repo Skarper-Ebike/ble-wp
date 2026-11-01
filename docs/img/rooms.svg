@@ -37,8 +37,8 @@
         <path d="M-26 -26a37 37 0 0 0 0 52M26 -26a37 37 0 0 1 0 52"/>
       </g>
       <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Find it</text>
-      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Spot the real pack</text>
-      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">among the decoys</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Find the right pack</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">and get inside</text>
       <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: advert code</text>
     </g>
 
@@ -77,9 +77,9 @@
       <g transform="translate(160 16)"><path d="M6 10V7a6 6 0 0 1 12 0v3" fill="none" stroke="#f59e0b" stroke-width="2.5"/><rect x="2" y="10" width="20" height="14" rx="3" fill="#f59e0b"/></g>
       <polygon transform="translate(100 88)" points="8,-38 -22,6 -2,6 -10,38 22,-8 2,-8" fill="#fbbf24"/>
       <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Survive</text>
-      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Drops, reboots, stalls.</text>
-      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">Recover every time</text>
-      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: storm code</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Keep talking to the pack,</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">whatever happens</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: earned</text>
     </g>
 
     <!-- 5 -->

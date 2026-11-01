@@ -94,7 +94,6 @@ docker compose exec emu python3 ctl.py score
 |---|---|
 | `ctl.py score` | Rooms opened, clock, hints taken |
 | `ctl.py hint` | Next clue for your current room. **Costs 5 minutes** |
-| `ctl.py drop` · `reboot` · `storm` · `corrupt` · `silent` | Break the pack yourself to test your firmware. Add seconds for a duration, e.g. `ctl.py silent 5` |
 
 **Tests** (GoogleTest / GMock):
 
@@ -122,33 +121,18 @@ cmake -S . -B build-test -DBUILD_APP=OFF -DBUILD_TESTING=ON && cmake --build bui
 
 <p align="center"><img src="docs/img/rooms.svg" alt="Five rooms: 1 find it, 2 listen, 3 talk, 4 survive, 5 escape" width="100%"></p>
 
-Each room asks for a bit more firmware. Build it properly and the code falls
-out. All the details are in [`docs/ICD.md`](docs/ICD.md).
+Everything you need is in [`docs/ICD.md`](docs/ICD.md).
 
-### 📡 Room 1 · Find it
-- **Build:** scanning, connect, service discovery, and writing to the Unlock characteristic.
-- **The puzzle:** three devices are advertising and two of them aren't the pack you want. Work out which one is real, then find its code. See *Advertising* in the ICD.
-- **Done when:** the console shows `ROOM 1 OPEN`. The pack then reboots, so your firmware has to find it and reconnect on its own.
+| | Room | Your job |
+|---|---|---|
+| 📡 | **1 · Find it** | Find the right pack in the advertising data, connect, discover its services and unlock it. |
+| 〰️ | **2 · Listen** | Subscribe to the telemetry characteristic and decode it. It carries the phrase that opens this room. |
+| ⌨️ | **3 · Talk** | Use the command channel to find out which cell is failing, and get its diagnostic code. |
+| ⚡ | **4 · Survive** | Keep your firmware talking to the pack, whatever happens. The pack gives you the code when it's satisfied. |
+| 🚪 | **5 · Escape** | Download the pack's event log. Its CRC-32 is the last code. Stretch goal. |
 
-### 〰️ Room 2 · Listen
-- **Build:** rediscovery after the reboot (handles change), a telemetry subscription, and a decoder for the 20-byte frame with its CRC check. Print a one-line status each second: voltage, current, SoC, frames lost and bad.
-- **The puzzle:** telemetry carries a 12-character phrase, a couple of characters at a time. Corrupt frames carry junk.
-- **Done when:** your firmware writes the right phrase and the console shows `ROOM 2 OPEN`.
-
-### ⌨️ Room 3 · Talk
-- **Build:** the command channel. Requests with an ID, responses matched to them, a timeout, a retry, and handling every status code. You'll also need an MTU exchange.
-- **The puzzle:** the pack refuses to help until you deal with its fault. Then find the failing cell and get its diagnostic code.
-- **Done when:** `ROOM 3 OPEN`.
-
-### ⚡ Room 4 · Survive
-- **Build:** recovery. Reconnect with backoff, restore your subscriptions and state, and never hang or crash.
-- **The puzzle:** none. The pack drops the link, reboots and stalls. Each time, it wants telemetry flowing again and a command answered **within 8 seconds** of you reconnecting. After three good recoveries it hands you the code on Unlock.
-- **Done when:** `ROOM 4 OPEN`. `ctl.py score` shows recoveries as you go.
-
-### 🚪 Room 5 · Escape (stretch)
-- **Build:** a chunked download of the event log, sized to the MTU, that resumes after a drop.
-- **The puzzle:** prove you have every byte. The code is the log's CRC-32.
-- **Done when:** `PACK RELEASED`.
+A room is open when the mission console says so. The pack reboots after each
+of the first three.
 
 **Throughout:** keep the logic you'd want to test (decoders, the state machine) in `application_core` and write unit tests for it as you go.
 
