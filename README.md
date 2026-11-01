@@ -35,10 +35,11 @@ echo MISSION=7Q4KM-2XDA9 > .env
 (with your token). Then use three terminals, all in the repo folder:
 
 **Terminal 1, the pack.** Start it once and leave it running. Its log is the
-mission console: room banners, clock, what the pack sees.
+mission console: room banners, clock, what the pack sees. If you've run an
+older version of this repo before, `docker compose down` first.
 
 ```
-docker compose up -d emu && docker compose logs -f emu
+docker compose up -d --build emu && docker compose logs -f emu
 ```
 
 **Terminal 2, your firmware.** Ctrl+C and run it again after every change.
