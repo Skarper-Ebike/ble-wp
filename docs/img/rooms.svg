@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Five rooms: find it, listen, talk, survive, escape">
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#1b2740" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#f59e0b"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="400" rx="18" fill="#0b1220"/>
+  <rect width="1200" height="400" rx="18" fill="url(#grid)"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="40" y="56" font-size="16" letter-spacing="4" fill="#f59e0b">FIVE ROOMS · ONE WAY OUT</text>
+    <text x="1160" y="56" font-size="14" text-anchor="end" fill="#64748b">rooms open in order · the pack reboots between them</text>
+  </g>
+
+  <!-- connectors -->
+  <g stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="6 6" marker-end="url(#arrow)">
+    <path d="M242 210H266"/>
+    <path d="M472 210H496"/>
+    <path d="M702 210H726"/>
+    <path d="M932 210H956"/>
+  </g>
+
+  <!-- card template: x, 200 wide, y 90, 240 tall -->
+  <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+
+    <!-- 1 -->
+    <g transform="translate(40 90)">
+      <rect width="200" height="250" rx="14" fill="#111a2e" stroke="#334155" stroke-width="2"/>
+      <text x="18" y="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#94a3b8">ROOM 1</text>
+      <g transform="translate(160 16)"><path d="M6 10V7a6 6 0 0 1 12 0v3" fill="none" stroke="#f59e0b" stroke-width="2.5"/><rect x="2" y="10" width="20" height="14" rx="3" fill="#f59e0b"/></g>
+      <g transform="translate(100 88)" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linecap="round">
+        <circle r="5" fill="#38bdf8" stroke="none"/>
+        <path d="M-14 -14a20 20 0 0 0 0 28M14 -14a20 20 0 0 1 0 28"/>
+        <path d="M-26 -26a37 37 0 0 0 0 52M26 -26a37 37 0 0 1 0 52"/>
+      </g>
+      <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Find it</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Spot the real pack</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">among the decoys</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: advert code</text>
+    </g>
+
+    <!-- 2 -->
+    <g transform="translate(270 90)">
+      <rect width="200" height="250" rx="14" fill="#111a2e" stroke="#334155" stroke-width="2"/>
+      <text x="18" y="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#94a3b8">ROOM 2</text>
+      <g transform="translate(160 16)"><path d="M6 10V7a6 6 0 0 1 12 0v3" fill="none" stroke="#f59e0b" stroke-width="2.5"/><rect x="2" y="10" width="20" height="14" rx="3" fill="#f59e0b"/></g>
+      <polyline transform="translate(100 88)" points="-44,0 -32,0 -26,-22 -16,24 -8,-34 2,30 10,-14 18,8 24,0 44,0" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Listen</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Decode telemetry,</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">assemble the phrase</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: service phrase</text>
+    </g>
+
+    <!-- 3 -->
+    <g transform="translate(500 90)">
+      <rect width="200" height="250" rx="14" fill="#111a2e" stroke="#334155" stroke-width="2"/>
+      <text x="18" y="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#94a3b8">ROOM 3</text>
+      <g transform="translate(160 16)"><path d="M6 10V7a6 6 0 0 1 12 0v3" fill="none" stroke="#f59e0b" stroke-width="2.5"/><rect x="2" y="10" width="20" height="14" rx="3" fill="#f59e0b"/></g>
+      <g transform="translate(100 88)">
+        <rect x="-40" y="-30" width="80" height="60" rx="8" fill="none" stroke="#34d399" stroke-width="3"/>
+        <path d="M-26 -10l12 10l-12 10" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M-6 12h22" stroke="#34d399" stroke-width="3" stroke-linecap="round"/>
+      </g>
+      <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Talk</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Command the pack,</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">find the failing cell</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: diag code</text>
+    </g>
+
+    <!-- 4 -->
+    <g transform="translate(730 90)">
+      <rect width="200" height="250" rx="14" fill="#111a2e" stroke="#334155" stroke-width="2"/>
+      <text x="18" y="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#94a3b8">ROOM 4</text>
+      <g transform="translate(160 16)"><path d="M6 10V7a6 6 0 0 1 12 0v3" fill="none" stroke="#f59e0b" stroke-width="2.5"/><rect x="2" y="10" width="20" height="14" rx="3" fill="#f59e0b"/></g>
+      <polygon transform="translate(100 88)" points="8,-38 -22,6 -2,6 -10,38 22,-8 2,-8" fill="#fbbf24"/>
+      <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Survive</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Drops, reboots, stalls.</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">Recover every time</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#f59e0b">key: storm code</text>
+    </g>
+
+    <!-- 5 -->
+    <g transform="translate(960 90)">
+      <rect width="200" height="250" rx="14" fill="#0f2a20" stroke="#22c55e" stroke-width="2"/>
+      <text x="18" y="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#86efac">ROOM 5 · EXIT</text>
+      <g transform="translate(100 88)">
+        <rect x="-26" y="-38" width="44" height="76" rx="4" fill="none" stroke="#22c55e" stroke-width="3"/>
+        <path d="M-26 -38l22 8v76l-22 -8z" fill="#22c55e" fill-opacity="0.35" stroke="#22c55e" stroke-width="2"/>
+        <path d="M24 0h20M36 -8l8 8l-8 8" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <text x="100" y="158" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc">Escape</text>
+      <text x="100" y="184" text-anchor="middle" font-size="14" fill="#cbd5e1">Pull the event log,</text>
+      <text x="100" y="203" text-anchor="middle" font-size="14" fill="#cbd5e1">prove it's all there</text>
+      <text x="100" y="234" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#86efac">key: log CRC-32</text>
+    </g>
+  </g>
+
+  <text x="40" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#64748b">Rooms 1–3 done well is a good result. Room 5 is the stretch.</text>
+</svg>
